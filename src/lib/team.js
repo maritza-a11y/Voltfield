@@ -1,21 +1,24 @@
-import { supabase } from './supabase'
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } }
+  if (body) opts.body = JSON.stringify(body)
+  const res = await fetch(path, opts)
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) return { data: null, error: { message: json.error ?? res.statusText } }
+  return { data: json, error: null }
+}
 
 export async function getTeamMembers() {
-  return supabase.from('team_members').select('*').order('invited_at', { ascending: false })
+  return api('GET', '/api/team-members')
 }
 
 export async function inviteTeamMember(email, fullName, role) {
-  return supabase
-    .from('team_members')
-    .insert({ email, full_name: fullName, role })
-    .select()
-    .single()
+  return api('POST', '/api/team-members', { email, full_name: fullName, role })
 }
 
 export async function updateTeamMember(id, updates) {
-  return supabase.from('team_members').update(updates).eq('id', id).select().single()
+  return api('PUT', `/api/team-members/${id}`, updates)
 }
 
 export async function removeTeamMember(id) {
-  return supabase.from('team_members').delete().eq('id', id)
+  return api('DELETE', `/api/team-members/${id}`)
 }

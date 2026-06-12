@@ -1,12 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
-
-const url = import.meta.env.VITE_SUPABASE_URL
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY
-
-export const isSupabaseConfigured =
-  Boolean(url) && !url.includes('YOUR-PROJECT') &&
-  Boolean(key) && !key.includes('your-anon')
-
-export const supabase = isSupabaseConfigured
-  ? createClient(url, key)
-  : createClient('https://placeholder.supabase.co', 'placeholder-key')
+// Supabase is no longer used — the app talks to the Express backend at /api.
+// This file is kept as a stub so any stale imports don't break the build.
+export const supabase = null
+export const isSupabaseConfigured = false

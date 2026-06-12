@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Bell, Check, CheckCheck } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { getNotifications, markRead, markAllRead } from '../lib/notifications'
-import { supabase } from '../lib/supabase'
+
+const POLL_MS = 15_000
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false)
@@ -16,13 +17,8 @@ export default function NotificationBell() {
 
   useEffect(() => {
     load()
-
-    const channel = supabase
-      .channel('notifications-bell')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, load)
-      .subscribe()
-
-    return () => supabase.removeChannel(channel)
+    const id = setInterval(load, POLL_MS)
+    return () => clearInterval(id)
   }, [])
 
   useEffect(() => {
@@ -82,9 +78,7 @@ export default function NotificationBell() {
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-navy-700">{n.message}</p>
-                    {n.job_number && (
-                      <p className="text-xs text-navy-400">{n.job_number}</p>
-                    )}
+                    {n.job_number && <p className="text-xs text-navy-400">{n.job_number}</p>}
                     <p className="mt-0.5 text-xs text-navy-300">
                       {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
                     </p>

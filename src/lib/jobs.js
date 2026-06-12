@@ -1,119 +1,80 @@
-import { supabase } from './supabase'
+// All data access goes through the Express backend at /api.
+// Functions return { data, error } to keep the same shape callers expect.
+
+async function api(method, path, body) {
+  const opts = { method, headers: {} }
+  if (body && !(body instanceof FormData)) {
+    opts.headers['Content-Type'] = 'application/json'
+    opts.body = JSON.stringify(body)
+  } else if (body) {
+    opts.body = body
+  }
+  const res = await fetch(path, opts)
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) return { data: null, error: { message: json.error ?? res.statusText } }
+  return { data: json, error: null }
+}
 
 export async function getJobs(filters = {}) {
-  let q = supabase.from('jobs').select('*').order('created_at', { ascending: false })
-
-  if (filters.search) {
-    const s = filters.search
-    q = q.or(`client_name.ilike.%${s}%,address.ilike.%${s}%,job_number.ilike.%${s}%,city.ilike.%${s}%`)
-  }
-  if (filters.city)      q = q.eq('city', filters.city)
-  if (filters.status)    q = q.eq('status', filters.status)
-  if (filters.job_type)  q = q.eq('job_type', filters.job_type)
-  if (filters.from_date) q = q.gte('created_at', filters.from_date)
-  if (filters.to_date)   q = q.lte('created_at', filters.to_date + 'T23:59:59')
-
-  return q
+  const params = new URLSearchParams()
+  if (filters.search)    params.set('search',    filters.search)
+  if (filters.city)      params.set('city',       filters.city)
+  if (filters.status)    params.set('status',     filters.status)
+  if (filters.job_type)  params.set('job_type',   filters.job_type)
+  if (filters.from_date) params.set('from_date',  filters.from_date)
+  if (filters.to_date)   params.set('to_date',    filters.to_date)
+  const qs = params.toString()
+  return api('GET', `/api/jobs${qs ? '?' + qs : ''}`)
 }
 
 export async function getJob(id) {
-  return supabase.from('jobs').select('*').eq('id', id).single()
+  return api('GET', `/api/jobs/${id}`)
 }
 
 export async function createJob(job) {
-  return supabase.from('jobs').insert(job).select().single()
+  return api('POST', '/api/jobs', job)
 }
 
 export async function updateJob(id, updates) {
-  return supabase
-    .from('jobs')
-    .update({ ...updates, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select()
-    .single()
+  return api('PUT', `/api/jobs/${id}`, updates)
 }
 
 export async function deleteJob(id) {
-  return supabase.from('jobs').delete().eq('id', id)
+  return api('DELETE', `/api/jobs/${id}`)
 }
 
 export async function getJobFiles(jobId, section) {
-  let q = supabase
-    .from('job_files')
-    .select('*')
-    .eq('job_id', jobId)
-    .order('uploaded_at', { ascending: false })
-  if (section) q = q.eq('section', section)
-  return q
+  const qs = section ? `?section=${section}` : ''
+  return api('GET', `/api/jobs/${jobId}/files${qs}`)
 }
 
 export async function getAllFiles(filters = {}) {
-  let q = supabase
-    .from('job_files')
-    .select('*, jobs(job_number, client_name)')
-    .order('uploaded_at', { ascending: false })
-
-  if (filters.section) q = q.eq('section', filters.section)
-  if (filters.job_id)  q = q.eq('job_id', filters.job_id)
-  if (filters.from)    q = q.gte('uploaded_at', filters.from)
-  if (filters.to)      q = q.lte('uploaded_at', filters.to + 'T23:59:59')
-
-  return q
+  const params = new URLSearchParams()
+  if (filters.section) params.set('section', filters.section)
+  if (filters.job_id)  params.set('job_id',  filters.job_id)
+  if (filters.from)    params.set('from',    filters.from)
+  if (filters.to)      params.set('to',      filters.to)
+  const qs = params.toString()
+  return api('GET', `/api/job-files${qs ? '?' + qs : ''}`)
 }
 
 export async function uploadJobFile(jobId, section, file, exifData = null) {
-  const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')
-  const path = `${jobId}/${section}/${Date.now()}-${safeName}`
-
-  const { error: uploadError } = await supabase.storage
-    .from('job-files')
-    .upload(path, file, { upsert: false })
-  if (uploadError) return { data: null, error: uploadError }
-
-  return supabase
-    .from('job_files')
-    .insert({
-      job_id:       jobId,
-      section,
-      file_name:    file.name,
-      storage_path: path,
-      file_size:    file.size,
-      mime_type:    file.type,
-      photo_lat:    exifData?.lat ?? null,
-      photo_lng:    exifData?.lng ?? null,
-      exif_data:    exifData ?? null,
-    })
-    .select()
-    .single()
+  const form = new FormData()
+  form.append('file', file)
+  if (exifData) form.append('exif', JSON.stringify(exifData))
+  return api('POST', `/api/jobs/${jobId}/files/${section}`, form)
 }
 
-export async function deleteJobFile(fileId, storagePath) {
-  await supabase.storage.from('job-files').remove([storagePath])
-  return supabase.from('job_files').delete().eq('id', fileId)
+export async function deleteJobFile(fileId, _storagePath) {
+  return api('DELETE', `/api/job-files/${fileId}`)
 }
 
 export function getPublicUrl(storagePath) {
-  const { data } = supabase.storage.from('job-files').getPublicUrl(storagePath)
-  return data.publicUrl
+  return `/uploads/${storagePath}`
 }
 
 export async function getDashboardStats() {
-  const [jobsRes, filesRes] = await Promise.all([
-    supabase.from('jobs').select('status'),
-    supabase.from('job_files').select('section'),
-  ])
-
-  const jobs = jobsRes.data ?? []
-  const files = filesRes.data ?? []
-
-  return {
-    total:     jobs.length,
-    active:    jobs.filter((j) => j.status === 'Active').length,
-    completed: jobs.filter((j) => j.status === 'Completed').length,
-    onHold:    jobs.filter((j) => j.status === 'On Hold').length,
-    photos:    files.filter((f) => f.section === 'photos').length,
-    invoices:  files.filter((f) => f.section === 'invoices').length,
-    contracts: files.filter((f) => f.section === 'contracts').length,
-    permits:   files.filter((f) => f.section === 'permits').length,
-  }
+  const { data, error } = await api('GET', '/api/stats')
+  // Return the stats object directly (not wrapped) so callers can use it as-is.
+  return data ?? { total: 0, active: 0, completed: 0, onHold: 0, photos: 0, invoices: 0, contracts: 0, permits: 0 }
 }

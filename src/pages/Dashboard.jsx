@@ -31,7 +31,7 @@ export default function Dashboard() {
       getDashboardStats(),
       getJobs(),
     ])
-    setStats(s)
+    setStats(s)  // getDashboardStats returns the object directly
     setRecentJobs((jobs ?? []).slice(0, 8))
     setLoading(false)
   }
